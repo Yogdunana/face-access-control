@@ -1,0 +1,34 @@
+recognition:
+  backend: "deepface"
+  deepface_model: "ArcFace"
+  deepface_detector: "opencv"
+  confidence_threshold: 0.6
+  model_path: "data/models/"
+
+scenario:
+  type: "access_control"
+
+camera:
+  device_index: 0
+  detection_window: 5
+  frame_interval: 100
+
+face_collection:
+  capture_count: 100
+  save_count: 10
+  face_data_dir: "data/face_data/"
+
+security:
+  bcrypt_rounds: 12
+  max_login_attempts: 5
+  lockout_minutes: 30
+  min_password_length: 8
+
+logging:
+  log_file: "data/logs.json"
+  max_entries: 10000
+
+data:
+  users_file: "data/users.json"
+  admin_config_file: "data/admin_config.json"
+  features_file: "data/models/face_features.npy"

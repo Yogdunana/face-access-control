@@ -1,0 +1,12 @@
+services:
+  face-ctl:
+    build: .
+    container_name: face-access-control
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - FACE_CTL_RECOGNITION__BACKEND=deepface
+    restart: unless-stopped
