@@ -4,7 +4,6 @@ Records all system events including authentication, recognition results, and adm
 """
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +24,7 @@ class LogManager:
 
     def _read(self) -> list[dict[str, Any]]:
         try:
-            with open(self._log_file, "r", encoding="utf-8") as f:
+            with open(self._log_file, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return []
@@ -34,7 +33,14 @@ class LogManager:
         with open(self._log_file, "w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
 
-    def log(self, event_type: str, detail: str, user: str = "system", level: str = "info") -> None:
+    def log(
+        self,
+        event_type: str,
+        detail: str,
+        user: str = "system",
+        level: str = "info",
+    ) -> None:
+        """Record a log entry."""
         entry = {
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
@@ -75,7 +81,13 @@ class LogManager:
     def log_face_registered(self, user_name: str, image_count: int) -> None:
         self.log("face_register", f"用户 {user_name} 注册人脸, 采集 {image_count} 张照片")
 
-    def get_logs(self, event_type: str | None = None, user: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    def get_logs(
+        self,
+        event_type: str | None = None,
+        user: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query logs with optional filters."""
         entries = self._read()
         if event_type:
             entries = [e for e in entries if e.get("event_type") == event_type]
@@ -84,11 +96,13 @@ class LogManager:
         return entries[-limit:]
 
     def export_logs(self, output_path: str) -> None:
+        """Export all logs to a file."""
         entries = self._read()
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
 
     def clear_logs(self) -> int:
+        """Clear all logs and return the count of cleared entries."""
         count = len(self._read())
         self._write([])
         return count

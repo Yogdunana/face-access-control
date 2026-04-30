@@ -33,7 +33,7 @@ class AuthManager:
     def _ensure_config(self) -> None:
         self._config_file.parent.mkdir(parents=True, exist_ok=True)
         if self._config_file.exists() and self._config_file.stat().st_size > 0:
-            with open(self._config_file, "r", encoding="utf-8") as f:
+            with open(self._config_file, encoding="utf-8") as f:
                 self._config = json.load(f)
         else:
             self._config = {
@@ -48,13 +48,16 @@ class AuthManager:
 
     @staticmethod
     def _hash_legacy(password: str) -> str:
+        """Legacy SHA-256 hashing for migration compatibility."""
         return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
     def hash_password(self, password: str) -> str:
+        """Hash a password using bcrypt."""
         salt = bcrypt.gensalt(rounds=self._bcrypt_rounds)
         return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
     def verify_password(self, password: str, stored_hash: str) -> bool:
+        """Verify a password against a stored hash."""
         try:
             if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$"):
                 return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
@@ -65,6 +68,7 @@ class AuthManager:
         return False
 
     def _is_locked(self, username: str) -> bool:
+        """Check if an account is currently locked out."""
         import time
         until = self._lockout_until.get(username, 0)
         if until and time.time() < until:
@@ -75,12 +79,14 @@ class AuthManager:
         return False
 
     def _record_failure(self, username: str) -> None:
+        """Record a failed login attempt and lock if threshold exceeded."""
         import time
         self._failed_attempts[username] = self._failed_attempts.get(username, 0) + 1
         if self._failed_attempts[username] >= self._max_attempts:
             self._lockout_until[username] = time.time() + self._lockout_minutes * 60
 
     def authenticate(self, username: str, password: str) -> tuple[bool, str]:
+        """Authenticate an admin user."""
         if self._is_locked(username):
             import time
             remaining = int(self._lockout_until[username] - time.time())
@@ -99,6 +105,7 @@ class AuthManager:
         return False, f"密码错误，还剩 {remaining} 次尝试机会"
 
     def change_password(self, old_password: str, new_password: str) -> tuple[bool, str]:
+        """Change the admin password."""
         stored_hash = self._config.get("admin_password_hash", "")
         if not self.verify_password(old_password, stored_hash):
             return False, "原密码错误"
@@ -113,10 +120,12 @@ class AuthManager:
 
     @property
     def password_changed(self) -> bool:
+        """Check if the default password has been changed."""
         return self._config.get("password_changed", False)
 
     @staticmethod
     def validate_password_strength(password: str) -> tuple[bool, str]:
+        """Validate password complexity."""
         if len(password) < 8:
             return False, "密码长度不能少于 8 个字符"
         if not any(c.isupper() for c in password):

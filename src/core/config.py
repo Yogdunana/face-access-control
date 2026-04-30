@@ -9,7 +9,6 @@ from typing import Any
 
 import yaml
 
-
 _DEFAULT_CONFIG = {
     "recognition": {
         "backend": "deepface",
@@ -61,7 +60,7 @@ class Config:
         self._apply_env_overrides()
 
     def _load_from_file(self, path: str) -> None:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             file_data = yaml.safe_load(f) or {}
         self._deep_merge(self._data, file_data)
 
@@ -104,4 +103,6 @@ class Config:
         return Path(self.get("data", "users_file", default="data/users.json")).parent
 
     def __repr__(self) -> str:
-        return f"Config(backend={self.get('recognition', 'backend')}, scenario={self.get('scenario', 'type')})"
+        b = self.get("recognition", "backend")
+        s = self.get("scenario", "type")
+        return f"Config(backend={b}, scenario={s})"

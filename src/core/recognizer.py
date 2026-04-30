@@ -5,7 +5,6 @@ Supports multiple backends: DeepFace, InsightFace (ArcFace), and legacy LBPH.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import cv2
@@ -35,7 +34,14 @@ class FaceDetector(ABC):
 
     @abstractmethod
     def detect(self, image: np.ndarray) -> list[DetectionResult]:
-        """Detect faces in an image."""
+        """Detect faces in an image.
+
+        Args:
+            image: BGR image array
+
+        Returns:
+            List of detection results
+        """
         ...
 
     @abstractmethod
@@ -49,13 +55,31 @@ class FaceRecognizer(ABC):
 
     @abstractmethod
     def extract_embedding(self, face_image: np.ndarray) -> np.ndarray:
-        """Extract face embedding (feature vector) from an aligned face image."""
+        """Extract face embedding (feature vector) from an aligned face image.
+
+        Args:
+            face_image: Aligned face image (RGB)
+
+        Returns:
+            Embedding vector (numpy array)
+        """
         ...
 
     @abstractmethod
     def compare(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
-        """Compare two face embeddings and return similarity score."""
+        """Compare two face embeddings and return similarity score.
+
+        Args:
+            embedding1: First embedding
+            embedding2: Second embedding
+
+        Returns:
+            Similarity score (0-1, higher means more similar)
+        """
         ...
+
+
+# ── LBPH Backend (Legacy) ──────────────────────────────────────
 
 
 class LBPHDetector(FaceDetector):
@@ -105,6 +129,7 @@ class LBPHRecognizer(FaceRecognizer):
         self._labels: dict[int, str] = {}
 
     def train(self, images: list[np.ndarray], labels: list[str]) -> None:
+        """Train the LBPH model with face images and labels."""
         if not images:
             return
         int_labels = []
@@ -120,6 +145,7 @@ class LBPHRecognizer(FaceRecognizer):
         self._trained = True
 
     def extract_embedding(self, face_image: np.ndarray) -> np.ndarray:
+        """For LBPH, the 'embedding' is the histogram vector."""
         if len(face_image.shape) == 3:
             gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
         else:
@@ -130,6 +156,7 @@ class LBPHRecognizer(FaceRecognizer):
         return hist.astype(np.float32)
 
     def compare(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+        """Compare using histogram correlation."""
         if len(embedding1) != len(embedding2):
             return 0.0
         return float(cv2.compareHist(
@@ -139,6 +166,7 @@ class LBPHRecognizer(FaceRecognizer):
         ))
 
     def predict(self, face_image: np.ndarray) -> tuple[str | None, float]:
+        """Predict the identity of a face image."""
         if not self._trained:
             return None, 0.0
         if len(face_image.shape) == 3:
@@ -150,6 +178,9 @@ class LBPHRecognizer(FaceRecognizer):
         similarity = max(0.0, 1.0 - confidence / 100.0)
         user_id = self._labels.get(int(label_id))
         return user_id, similarity
+
+
+# ── DeepFace Backend ───────────────────────────────────────────
 
 
 class DeepFaceDetector(FaceDetector):
@@ -169,7 +200,10 @@ class DeepFaceDetector(FaceDetector):
             results = []
             for det in detections:
                 region = det.get("facial_area", {})
-                x, y, w, h = region.get("x", 0), region.get("y", 0), region.get("w", 0), region.get("h", 0)
+                x = region.get("x", 0)
+                y = region.get("y", 0)
+                w = region.get("w", 0)
+                h = region.get("h", 0)
                 if w > 0 and h > 0:
                     results.append(DetectionResult(
                         bounding_box=(x, y, w, h),
@@ -210,11 +244,15 @@ class DeepFaceRecognizer(FaceRecognizer):
         return np.array([], dtype=np.float32)
 
     def compare(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+        """Cosine similarity between two embeddings."""
         if len(embedding1) == 0 or len(embedding2) == 0:
             return 0.0
         dot = np.dot(embedding1, embedding2)
         norm = np.linalg.norm(embedding1) * np.linalg.norm(embedding2)
         return float(dot / (norm + 1e-8))
+
+
+# ── InsightFace Backend (ArcFace) ─────────────────────────────
 
 
 class InsightFaceDetector(FaceDetector):
@@ -245,8 +283,14 @@ class InsightFaceDetector(FaceDetector):
                 results.append(DetectionResult(
                     bounding_box=(x, y, x2 - x, y2 - y),
                     confidence=float(face.det_score),
-                    landmarks=face.kps.tolist() if hasattr(face, "kps") else None,
-                    aligned_face=face.normed_embedding if hasattr(face, "normed_embedding") else None,
+                    landmarks=(
+                        face.kps.tolist() if hasattr(face, "kps") else None
+                    ),
+                    aligned_face=(
+                        face.normed_embedding
+                        if hasattr(face, "normed_embedding")
+                        else None
+                    ),
                 ))
             return results
         except Exception:
@@ -288,6 +332,7 @@ class InsightFaceRecognizer(FaceRecognizer):
         return np.array([], dtype=np.float32)
 
     def compare(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+        """Cosine similarity between two ArcFace embeddings."""
         if len(embedding1) == 0 or len(embedding2) == 0:
             return 0.0
         dot = np.dot(embedding1, embedding2)
@@ -295,7 +340,11 @@ class InsightFaceRecognizer(FaceRecognizer):
         return float(dot / (norm + 1e-8))
 
 
+# ── Factory ────────────────────────────────────────────────────
+
+
 def create_detector(backend: str, **kwargs: Any) -> FaceDetector:
+    """Factory function to create a face detector."""
     if backend == "lbph":
         return LBPHDetector()
     elif backend == "deepface":
@@ -307,6 +356,7 @@ def create_detector(backend: str, **kwargs: Any) -> FaceDetector:
 
 
 def create_recognizer(backend: str, **kwargs: Any) -> FaceRecognizer:
+    """Factory function to create a face recognizer."""
     if backend == "lbph":
         return LBPHRecognizer()
     elif backend == "deepface":
