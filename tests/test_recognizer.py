@@ -3,13 +3,14 @@ import numpy as np
 import pytest
 
 from src.core.recognizer import (
+    DeepFaceRecognizer,
     LBPHDetector,
     LBPHRecognizer,
-    DeepFaceRecognizer,
     create_detector,
     create_recognizer,
 )
 
+# Skip LBPH tests if opencv-contrib-python is not installed
 try:
     import cv2
     cv2.face.LBPHFaceRecognizer_create()
@@ -57,14 +58,20 @@ class TestLBPHRecognizer:
         assert similarity > 0.9
 
     def test_compare_different(self):
+        """LBPH: verify predict() correctly distinguishes different faces after training."""
         recognizer = LBPHRecognizer()
+        # Create two visually distinct grayscale faces with different textures
         rng_a = np.random.RandomState(42)
         face_a = rng_a.randint(80, 130, (200, 200), dtype=np.uint8)
         rng_b = np.random.RandomState(99)
         face_b = rng_b.randint(150, 220, (200, 200), dtype=np.uint8)
         recognizer.train([face_a, face_b], ["person_a", "person_b"])
+
+        # Predict face_a should return person_a
         pred_id, confidence = recognizer.predict(face_a)
         assert pred_id == "person_a"
+
+        # Predict face_b should return person_b
         pred_id2, confidence2 = recognizer.predict(face_b)
         assert pred_id2 == "person_b"
 

@@ -69,6 +69,6 @@ class TestAuthManager:
         ok, _ = self.auth.authenticate("admin", "admin123")
         assert ok is True
         import json
-        with open(self.tmpfile.name, "r") as f:
+        with open(self.tmpfile.name, encoding="utf-8") as f:
             data = json.load(f)
         assert data["admin_password_hash"].startswith("$2b$")

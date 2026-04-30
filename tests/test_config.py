@@ -2,12 +2,11 @@
 import os
 import tempfile
 
-import pytest
-
 from src.core.config import Config
 
 
 def _clean_env():
+    """Remove all FACE_CTL env vars."""
     for k in list(os.environ.keys()):
         if k.startswith("FACE_CTL_"):
             del os.environ[k]
@@ -27,7 +26,8 @@ class TestConfig:
         assert config.get("security", "max_login_attempts") == 5
 
     def test_yaml_loading(self):
-        yaml_content = """recognition:
+        yaml_content = """
+recognition:
   backend: "lbph"
   confidence_threshold: 0.8
 """

@@ -3,7 +3,6 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from src.core.user_manager import UserManager
 
@@ -69,6 +68,7 @@ class TestUserManager:
         assert ok is True
         ok, _ = self.mgr.add_time_slot(user["id"], "20:00", "22:00")
         assert ok is True
+
         user = self.mgr.get_user(user["id"])
         assert len(user["time_slots"]) == 2
 
@@ -77,6 +77,7 @@ class TestUserManager:
         user = self.mgr.get_user_by_name("张三")
         embedding = np.random.randn(512).astype(np.float32)
         self.mgr.set_face_embedding(user["id"], embedding)
+
         retrieved = self.mgr.get_face_embedding(user["id"])
         assert retrieved is not None
         assert np.allclose(retrieved, embedding)
@@ -86,8 +87,12 @@ class TestUserManager:
         user = self.mgr.get_user_by_name("张三")
         embedding = np.random.randn(512).astype(np.float32)
         self.mgr.set_face_embedding(user["id"], embedding)
+
+        # Same embedding should be detected as duplicate
         duplicate_id = self.mgr.check_face_duplicate(embedding, threshold=0.9)
         assert duplicate_id == user["id"]
+
+        # Different embedding should not be duplicate
         different = np.random.randn(512).astype(np.float32)
         duplicate_id = self.mgr.check_face_duplicate(different, threshold=0.9)
         assert duplicate_id is None
@@ -96,4 +101,4 @@ class TestUserManager:
         self.mgr.add_user("张三")
         users = self.mgr.list_users()
         assert len(users) == 1
-        assert "face_images" not in users[0]
+        assert "face_images" not in users[0]  # Should not expose image paths

@@ -4,9 +4,8 @@ Provides RESTful API and WebSocket support for face recognition operations.
 """
 
 import base64
-import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -14,16 +13,18 @@ from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSock
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from src.core.config import Config
 from src.core.auth import AuthManager
+from src.core.config import Config
 from src.core.log_manager import LogManager
-from src.core.user_manager import UserManager
 from src.core.recognizer import create_detector, create_recognizer
-from src.scenarios.base import registry
+from src.core.user_manager import UserManager
 from src.scenarios.access_control import AccessControlScenario
 from src.scenarios.attendance import AttendanceScenario
-from src.scenarios.visitor import VisitorScenario
+from src.scenarios.base import registry
 from src.scenarios.surveillance import SurveillanceScenario
+from src.scenarios.visitor import VisitorScenario
+
+# ── App Initialization ─────────────────────────────────────────
 
 app = FastAPI(
     title="Face Access Control API",
@@ -39,6 +40,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Globals ────────────────────────────────────────────────────
+
 config = Config()
 auth = AuthManager(
     config_file=config.get("data", "admin_config_file", default="data/admin_config.json"),
@@ -53,6 +56,7 @@ user_manager = UserManager(
     features_file=config.get("data", "features_file", default="data/models/face_features.npy"),
 )
 
+# Register scenarios
 registry.register("access_control", AccessControlScenario)
 registry.register("attendance", AttendanceScenario)
 registry.register("visitor", VisitorScenario)
@@ -63,6 +67,9 @@ active_scenario = registry.create(
     user_manager=user_manager,
     log_manager=log_manager,
 )
+
+
+# ── Pydantic Models ────────────────────────────────────────────
 
 
 class LoginRequest(BaseModel):
@@ -115,10 +122,17 @@ class ScenarioSwitch(BaseModel):
     scenario_type: str
 
 
+# ── Auth Endpoints ─────────────────────────────────────────────
+
+
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(req: LoginRequest):
     success, message = auth.authenticate(req.username, req.password)
-    return LoginResponse(success=success, message=message, password_changed=auth.password_changed)
+    return LoginResponse(
+        success=success,
+        message=message,
+        password_changed=auth.password_changed,
+    )
 
 
 @app.post("/api/auth/change-password")
@@ -127,6 +141,9 @@ async def change_password(req: ChangePasswordRequest):
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
     return {"success": True, "message": msg}
+
+
+# ── User Endpoints ─────────────────────────────────────────────
 
 
 @app.get("/api/users", response_model=list[UserResponse])
@@ -162,6 +179,9 @@ async def update_user_name(user_id: str, name: str):
     return {"success": True, "message": msg}
 
 
+# ── Time Slot Endpoints ────────────────────────────────────────
+
+
 @app.post("/api/users/{user_id}/time-slots")
 async def add_time_slot(user_id: str, slot: TimeSlotCreate):
     ok, msg = user_manager.add_time_slot(user_id, slot.start_time, slot.end_time)
@@ -178,16 +198,24 @@ async def remove_time_slot(user_id: str, slot_id: str):
     return {"success": True, "message": msg}
 
 
+# ── Face Registration Endpoint ─────────────────────────────────
+
+
+
 @app.post("/api/users/{user_id}/register-face")
 async def register_face(user_id: str, file: UploadFile = File(...)):
     user = user_manager.get_user(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+
+    # Read and decode image
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="无法解析图片文件")
+
+    # Detect face
     backend = config.get("recognition", "backend", default="deepface")
     detector = create_detector(
         backend,
@@ -197,9 +225,13 @@ async def register_face(user_id: str, file: UploadFile = File(...)):
     detections = detector.detect(image)
     if not detections:
         raise HTTPException(status_code=400, detail="未在图片中检测到人脸")
+
+    # Use largest face
     largest = max(detections, key=lambda d: d.bounding_box[2] * d.bounding_box[3])
     x, y, w, h = largest.bounding_box
     face_img = image[y:y + h, x:x + w]
+
+    # Extract embedding
     recognizer = create_recognizer(
         backend,
         model_name=config.get("recognition", "deepface_model", default="ArcFace"),
@@ -209,21 +241,30 @@ async def register_face(user_id: str, file: UploadFile = File(...)):
     embedding = recognizer.extract_embedding(face_img)
     if len(embedding) == 0:
         raise HTTPException(status_code=500, detail="人脸特征提取失败")
+
+    # Check for duplicate
     threshold = config.get("recognition", "confidence_threshold", default=0.6)
     duplicate_id = user_manager.check_face_duplicate(embedding, threshold=threshold)
     if duplicate_id and duplicate_id != user_id:
         dup_user = user_manager.get_user(duplicate_id)
         dup_name = dup_user["name"] if dup_user else duplicate_id
         raise HTTPException(status_code=400, detail=f"该人脸已注册为用户 '{dup_name}'")
+
+    # Save face image and embedding
     face_data_dir = Path(config.get("face_collection", "face_data_dir", default="data/face_data/"))
     user_dir = face_data_dir / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
     img_path = str(user_dir / f"face_{len(user.get('face_images', []))}.jpg")
     cv2.imwrite(img_path, face_img)
+
     user_manager.set_face_images(user_id, user.get("face_images", []) + [img_path])
     user_manager.set_face_embedding(user_id, embedding)
     log_manager.log_face_registered(user["name"], 1)
+
     return {"success": True, "message": f"人脸注册成功: {user['name']}"}
+
+
+# ── Recognition Endpoint ───────────────────────────────────────
 
 
 @app.post("/api/recognize", response_model=RecognizeResponse)
@@ -233,6 +274,7 @@ async def recognize_face(file: UploadFile = File(...)):
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="无法解析图片文件")
+
     backend = config.get("recognition", "backend", default="deepface")
     detector = create_detector(
         backend,
@@ -245,34 +287,50 @@ async def recognize_face(file: UploadFile = File(...)):
         detector_backend=config.get("recognition", "deepface_detector", default="opencv"),
         model_path=config.get("recognition", "model_path", default="data/models/"),
     )
+
     detections = detector.detect(image)
     if not detections:
         msg = active_scenario.on_recognition_failure()
         return RecognizeResponse(success=False, message=msg)
+
     largest = max(detections, key=lambda d: d.bounding_box[2] * d.bounding_box[3])
     x, y, w, h = largest.bounding_box
     face_img = image[y:y + h, x:x + w]
+
     embedding = recognizer.extract_embedding(face_img)
     if len(embedding) == 0:
         msg = active_scenario.on_recognition_failure()
         return RecognizeResponse(success=False, message=msg)
+
     threshold = config.get("recognition", "confidence_threshold", default=0.6)
     best_match = None
     best_score = 0.0
+
     for uid, stored_emb in user_manager.get_all_embeddings().items():
         if stored_emb is not None and len(stored_emb) == len(embedding):
             score = recognizer.compare(embedding, stored_emb)
             if score > best_score:
                 best_score = score
                 best_match = uid
+
     if best_match and best_score >= threshold:
         user = user_manager.get_user(best_match)
         name = user["name"] if user else best_match
         msg = active_scenario.on_recognition_success(best_match, name, best_score)
-        return RecognizeResponse(success=True, user_id=best_match, user_name=name, confidence=best_score, message=msg)
+        return RecognizeResponse(
+            success=True,
+            user_id=best_match,
+            user_name=name,
+            confidence=best_score,
+            message=msg,
+        )
     else:
         msg = active_scenario.on_recognition_failure()
         return RecognizeResponse(success=False, confidence=best_score, message=msg)
+
+
+# ── Scenario Endpoints ─────────────────────────────────────────
+
 
 
 @app.get("/api/scenarios", response_model=list[ScenarioInfo])
@@ -299,9 +357,16 @@ async def get_dashboard():
     return active_scenario.get_dashboard_data()
 
 
+# ── Log Endpoints ──────────────────────────────────────────────
+
+
 @app.get("/api/logs")
 async def get_logs(event_type: Optional[str] = None, limit: int = 100):
     return log_manager.get_logs(event_type=event_type, limit=limit)
+
+
+
+# ── WebSocket for Real-time Recognition ────────────────────────
 
 
 @app.websocket("/ws/recognize")
@@ -321,6 +386,7 @@ async def ws_recognize(websocket: WebSocket):
             model_path=config.get("recognition", "model_path", default="data/models/"),
         )
         threshold = config.get("recognition", "confidence_threshold", default=0.6)
+
         while True:
             data = await websocket.receive_text()
             try:
@@ -330,19 +396,23 @@ async def ws_recognize(websocket: WebSocket):
                 if image is None:
                     await websocket.send_json({"success": False, "message": "无法解析图片"})
                     continue
+
                 detections = detector.detect(image)
                 if not detections:
                     msg = active_scenario.on_recognition_failure()
                     await websocket.send_json({"success": False, "message": msg})
                     continue
+
                 largest = max(detections, key=lambda d: d.bounding_box[2] * d.bounding_box[3])
                 x, y, w, h = largest.bounding_box
                 face_img = image[y:y + h, x:x + w]
+
                 embedding = recognizer.extract_embedding(face_img)
                 if len(embedding) == 0:
                     msg = active_scenario.on_recognition_failure()
                     await websocket.send_json({"success": False, "message": msg})
                     continue
+
                 best_match = None
                 best_score = 0.0
                 for uid, stored_emb in user_manager.get_all_embeddings().items():
@@ -351,18 +421,30 @@ async def ws_recognize(websocket: WebSocket):
                         if score > best_score:
                             best_score = score
                             best_match = uid
+
                 if best_match and best_score >= threshold:
                     user = user_manager.get_user(best_match)
                     name = user["name"] if user else best_match
                     msg = active_scenario.on_recognition_success(best_match, name, best_score)
-                    await websocket.send_json({"success": True, "user_id": best_match, "user_name": name, "confidence": best_score, "message": msg})
+                    await websocket.send_json({
+                        "success": True,
+                        "user_id": best_match,
+                        "user_name": name,
+                        "confidence": best_score,
+                        "message": msg,
+                    })
                 else:
                     msg = active_scenario.on_recognition_failure()
                     await websocket.send_json({"success": False, "message": msg})
+
             except Exception as e:
                 await websocket.send_json({"success": False, "message": str(e)})
+
     except WebSocketDisconnect:
         pass
+
+
+# ── Health Check ───────────────────────────────────────────────
 
 
 @app.get("/api/health")
