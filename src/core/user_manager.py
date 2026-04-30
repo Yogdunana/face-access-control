@@ -37,7 +37,7 @@ class UserManager:
 
     def _load_users(self) -> list[dict[str, Any]]:
         if self._users_file.exists():
-            with open(self._users_file, "r", encoding="utf-8") as f:
+            with open(self._users_file, encoding="utf-8") as f:
                 return json.load(f)
         return []
 
@@ -58,6 +58,7 @@ class UserManager:
         np.save(self._features_file, self._face_features)
 
     def list_users(self) -> list[dict[str, Any]]:
+        """Return all users (without sensitive face image paths)."""
         return [
             {
                 "id": u["id"],
@@ -70,18 +71,21 @@ class UserManager:
         ]
 
     def get_user(self, user_id: str) -> dict[str, Any] | None:
+        """Get a user by ID."""
         for u in self._users:
             if u["id"] == user_id:
                 return u
         return None
 
     def get_user_by_name(self, name: str) -> dict[str, Any] | None:
+        """Get a user by name."""
         for u in self._users:
             if u["name"] == name:
                 return u
         return None
 
     def add_user(self, name: str, face_images: list[str] | None = None) -> tuple[bool, str]:
+        """Add a new user."""
         if self.get_user_by_name(name):
             return False, f"用户名 '{name}' 已存在"
         user_id = str(uuid4())[:8]
@@ -97,6 +101,7 @@ class UserManager:
         return True, f"用户 '{name}' 添加成功 (ID: {user_id})"
 
     def delete_user(self, user_id: str) -> tuple[bool, str]:
+        """Delete a user and their face data."""
         user = self.get_user(user_id)
         if not user:
             return False, f"未找到 ID 为 {user_id} 的用户"
@@ -114,6 +119,7 @@ class UserManager:
         return True, f"用户 '{user['name']}' 已删除"
 
     def delete_users_batch(self, user_ids: list[str]) -> tuple[int, list[str]]:
+        """Delete multiple users by ID."""
         success = 0
         errors = []
         for uid in user_ids:
@@ -125,6 +131,7 @@ class UserManager:
         return success, errors
 
     def update_user_name(self, user_id: str, new_name: str) -> tuple[bool, str]:
+        """Update a user's display name."""
         user = self.get_user(user_id)
         if not user:
             return False, f"未找到 ID 为 {user_id} 的用户"
@@ -137,6 +144,7 @@ class UserManager:
         return True, f"用户名已从 '{old_name}' 更新为 '{new_name}'"
 
     def set_face_images(self, user_id: str, image_paths: list[str]) -> tuple[bool, str]:
+        """Set face images for a user."""
         user = self.get_user(user_id)
         if not user:
             return False, f"未找到 ID 为 {user_id} 的用户"
@@ -145,22 +153,27 @@ class UserManager:
         return True, f"用户 '{user['name']}' 的人脸图像已更新 ({len(image_paths)} 张)"
 
     def set_face_embedding(self, user_id: str, embedding: np.ndarray) -> None:
+        """Store a face embedding (feature vector) for a user."""
         self._face_features[user_id] = embedding
         self._save_features()
 
     def get_face_embedding(self, user_id: str) -> np.ndarray | None:
+        """Retrieve the face embedding for a user."""
         return self._face_features.get(user_id)
 
     def get_all_embeddings(self) -> dict[str, np.ndarray]:
+        """Return all stored face embeddings."""
         return self._face_features
 
     def has_face_data(self, user_id: str) -> bool:
+        """Check if a user has registered face data."""
         user = self.get_user(user_id)
         if not user:
             return False
         return bool(user.get("face_images")) or user_id in self._face_features
 
     def check_face_duplicate(self, embedding: np.ndarray, threshold: float = 0.6) -> str | None:
+        """Check if a face embedding matches any existing user."""
         for uid, stored_emb in self._face_features.items():
             if stored_emb is not None and len(stored_emb) == len(embedding):
                 similarity = np.dot(embedding, stored_emb) / (
@@ -170,7 +183,10 @@ class UserManager:
                     return uid
         return None
 
-    def add_time_slot(self, user_id: str, start_time: str, end_time: str) -> tuple[bool, str]:
+    def add_time_slot(
+        self, user_id: str, start_time: str, end_time: str
+    ) -> tuple[bool, str]:
+        """Add an access time slot for a user."""
         user = self.get_user(user_id)
         if not user:
             return False, f"未找到 ID 为 {user_id} 的用户"
@@ -181,6 +197,7 @@ class UserManager:
         return True, f"已为用户 '{user['name']}' 添加时段 {start_time}-{end_time}"
 
     def remove_time_slot(self, user_id: str, slot_id: str) -> tuple[bool, str]:
+        """Remove a time slot from a user."""
         user = self.get_user(user_id)
         if not user:
             return False, f"未找到 ID 为 {user_id} 的用户"
@@ -192,7 +209,10 @@ class UserManager:
         self._save_users()
         return True, f"已删除时段 {slot_id}"
 
-    def update_time_slot(self, user_id: str, slot_id: str, start_time: str, end_time: str) -> tuple[bool, str]:
+    def update_time_slot(
+        self, user_id: str, slot_id: str, start_time: str, end_time: str
+    ) -> tuple[bool, str]:
+        """Update a time slot."""
         user = self.get_user(user_id)
         if not user:
             return False, f"未找到 ID 为 {user_id} 的用户"
@@ -205,6 +225,7 @@ class UserManager:
         return False, f"未找到时段 ID {slot_id}"
 
     def check_time_permission(self, user_id: str) -> tuple[bool, str]:
+        """Check if the current time falls within any of the user's authorized time slots."""
         user = self.get_user(user_id)
         if not user:
             return False, "用户不存在"

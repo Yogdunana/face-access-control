@@ -10,17 +10,18 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.core.config import Config
-from src.core.auth import AuthManager
-from src.core.log_manager import LogManager
-from src.core.user_manager import UserManager
-from src.core.console_ui import ConsoleUI
-from src.core.recognizer import create_detector, create_recognizer
-from src.scenarios.base import registry
-from src.scenarios.access_control import AccessControlScenario
-from src.scenarios.attendance import AttendanceScenario
-from src.scenarios.visitor import VisitorScenario
-from src.scenarios.surveillance import SurveillanceScenario
+# noqa: E402 — imports must come after sys.path modification
+from src.core.auth import AuthManager  # noqa: E402
+from src.core.config import Config  # noqa: E402
+from src.core.console_ui import ConsoleUI  # noqa: E402
+from src.core.log_manager import LogManager  # noqa: E402
+from src.core.recognizer import create_detector, create_recognizer  # noqa: E402
+from src.core.user_manager import UserManager  # noqa: E402
+from src.scenarios.access_control import AccessControlScenario  # noqa: E402
+from src.scenarios.attendance import AttendanceScenario  # noqa: E402
+from src.scenarios.base import registry  # noqa: E402
+from src.scenarios.surveillance import SurveillanceScenario  # noqa: E402
+from src.scenarios.visitor import VisitorScenario  # noqa: E402
 
 
 def register_scenarios():
@@ -95,9 +96,15 @@ def handle_face_recognition(config: Config, ui: ConsoleUI, scenario, log_manager
             ui.display_recognition_result(result_msg)
             return
         user_manager = UserManager(
-            users_file=config.get("data", "users_file", default="data/users.json"),
-            face_data_dir=config.get("face_collection", "face_data_dir", default="data/face_data/"),
-            features_file=config.get("data", "features_file", default="data/models/face_features.npy"),
+            users_file=config.get(
+                "data", "users_file", default="data/users.json"
+            ),
+            face_data_dir=config.get(
+                "face_collection", "face_data_dir", default="data/face_data/"
+            ),
+            features_file=config.get(
+                "data", "features_file", default="data/models/face_features.npy"
+            ),
         )
         threshold = config.get("recognition", "confidence_threshold", default=0.6)
         best_match = None
@@ -201,7 +208,12 @@ def handle_user_management(user_manager: UserManager, ui: ConsoleUI, log_manager
         ui.press_enter()
 
 
-def handle_face_collection(config: Config, user_manager: UserManager, ui: ConsoleUI, log_manager: LogManager):
+def handle_face_collection(
+    config: Config,
+    user_manager: UserManager,
+    ui: ConsoleUI,
+    log_manager: LogManager,
+):
     """Handle face collection and registration."""
     ui.display_info("人脸录入功能需要摄像头支持")
     user_id = ui.prompt("请输入用户 ID")
@@ -215,7 +227,9 @@ def handle_face_collection(config: Config, user_manager: UserManager, ui: Consol
         import cv2
         capture_count = config.get("face_collection", "capture_count", default=100)
         save_count = config.get("face_collection", "save_count", default=10)
-        face_data_dir = Path(config.get("face_collection", "face_data_dir", default="data/face_data/"))
+        face_data_dir = Path(
+            config.get("face_collection", "face_data_dir", default="data/face_data/")
+        )
         user_dir = face_data_dir / user_id
         user_dir.mkdir(parents=True, exist_ok=True)
         device_index = config.get("camera", "device_index", default=0)
@@ -224,7 +238,8 @@ def handle_face_collection(config: Config, user_manager: UserManager, ui: Consol
             ui.display_error("无法打开摄像头")
             return
         ui.display_info(f"正在采集人脸，共需采集 {capture_count} 张...")
-        cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        cascade = cv2.CascadeClassifier(cascade_path)
         collected = 0
         saved_paths = []
         while collected < capture_count:
@@ -232,7 +247,9 @@ def handle_face_collection(config: Config, user_manager: UserManager, ui: Consol
             if not ret:
                 break
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+            faces = cascade.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+            )
             for (x, y, w, h) in faces:
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 collected += 1
@@ -259,10 +276,10 @@ def handle_face_collection(config: Config, user_manager: UserManager, ui: Consol
 def handle_settings(config: Config, auth: AuthManager, ui: ConsoleUI):
     """Handle system settings."""
     print("\n── 系统设置 ──")
-    print(f"  [1] 修改管理员密码")
+    print("  [1] 修改管理员密码")
     print(f"  [2] 当前识别后端: {config.get('recognition', 'backend')}")
     print(f"  [3] 当前场景: {config.get('scenario', 'type')}")
-    print(f"  [0] 返回主菜单")
+    print("  [0] 返回主菜单")
     choice = ui.prompt("请选择")
     if choice == "1":
         old_pwd = ui.prompt_password("请输入原密码")
@@ -337,8 +354,11 @@ def main():
             if logs:
                 print("\n  最近日志:")
                 for log in logs[-20:]:
-                    level_icon = {"info": "ℹ️", "warning": "⚠️", "error": "❌"}.get(log.get("level", "info"), "ℹ️")
-                    print(f"  {level_icon} [{log['timestamp'][:19]}] [{log['event_type']}] {log['detail']}")
+                    icons = {"info": "ℹ️", "warning": "⚠️", "error": "❌"}
+                    level_icon = icons.get(log.get("level", "info"), "ℹ️")
+                    ts = log["timestamp"][:19]
+                    evt = log["event_type"]
+                    print(f"  {level_icon} [{ts}] [{evt}] {log['detail']}")
             else:
                 ui.display_info("暂无日志记录")
         elif choice == "0":
